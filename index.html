@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Master Set Twitch ME02</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --blue-aura: rgba(0, 150, 255, 0.6);
+            --purple-aura: rgba(150, 0, 255, 0.7);
+            --gold-aura: rgba(255, 215, 0, 0.8);
+        }
+
+        body { 
+            background: #0d0d0d; 
+            color: white; 
+            font-family: 'Orbitron', sans-serif; 
+            margin: 0; 
+            padding: 20px; 
+        }
+
+        /* En-tête avec Logo */
+        .header { text-align: center; margin-bottom: 40px; }
+        .logo { max-width: 150px; margin-bottom: 10px; filter: drop-shadow(0 0 10px rgba(255,255,255,0.3)); }
+        h1 { font-size: 1.8rem; letter-spacing: 2px; color: #eee; margin: 10px 0; }
+
+        .search-area { margin-bottom: 30px; }
+        input { 
+            padding: 12px 20px; border-radius: 30px; border: 1px solid #444; 
+            background: #1a1a1a; color: white; width: 250px; outline: none;
+        }
+        button { 
+            padding: 12px 25px; border-radius: 30px; background: white; 
+            color: black; font-weight: bold; border: none; cursor: pointer; transition: 0.3s;
+        }
+        button:hover { background: #00ffcc; transform: translateY(-2px); }
+
+        /* Grille */
+        .grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); 
+            gap: 20px; max-width: 1200px; margin: 0 auto; 
+        }
+
+        @media (min-width: 600px) { .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); } }
+
+        /* Cartes et Auras */
+        .card-container { position: relative; border-radius: 12px; transition: 0.3s; }
+        .card-img { 
+            width: 100%; border-radius: 10px; display: block;
+            filter: grayscale(100%) brightness(20%); transition: 0.5s;
+        }
+
+        .owned .card-img { filter: grayscale(0%) brightness(100%); }
+
+        /* Animations des Auras */
+        @keyframes pulse-aura {
+            0% { box-shadow: 0 0 5px var(--color), inset 0 0 5px var(--color); }
+            50% { box-shadow: 0 0 20px var(--color), inset 0 0 10px var(--color); }
+            100% { box-shadow: 0 0 5px var(--color), inset 0 0 5px var(--color); }
+        }
+
+        /* RARE : Bleu (31-40) */
+        .owned.rarity-rare { --color: var(--blue-aura); animation: pulse-aura 3s infinite; }
+        /* TRES RARE : Violet (41-46) */
+        .owned.rarity-vrare { --color: var(--purple-aura); animation: pulse-aura 2.5s infinite; }
+        /* ULTRA : Or (47-50) */
+        .owned.rarity-ultra { --color: var(--gold-aura); animation: pulse-aura 2s infinite; }
+
+        .badge { 
+            position: absolute; top: -8px; right: -8px; background: #ff0055; 
+            color: white; border-radius: 50%; width: 30px; height: 30px; 
+            display: none; align-items: center; justify-content: center; 
+            font-size: 14px; border: 2px solid white; z-index: 10;
+        }
+        .owned .badge { display: flex; }
+
+        /* Modal Zoom */
+        #modal { 
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.95); z-index: 1000; justify-content: center; align-items: center; flex-direction: column;
+        }
+        #modal img { width: 85%; max-width: 350px; border-radius: 15px; }
+        #modal-info { margin-top: 20px; font-family: sans-serif; line-height: 1.5; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <img src="img/logo.png" alt="Logo" class="logo" onerror="this.style.display='none'">
+        <h1>MASTER SET TWITCH ME02</h1>
+        <div class="search-area">
+            <input type="text" id="pseudo" placeholder="Ton pseudo...">
+            <button onclick="chargerAlbum()">CHARGER</button>
+        </div>
+        <div id="stats" style="color: #00ffcc;"></div>
+    </div>
+
+    <div class="grid" id="album"></div>
+
+    <div id="modal" onclick="this.style.display='none'">
+        <img id="modal-img" src="">
+        <div id="modal-info"></div>
+    </div>
+
+    <script>
+        const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR47QWdhzcXoGqyJc0_OIPnLvPMmeGAofr2RpB-MfvT-7F3rG0ATQ4O5KUtI0u2GkDHV5tTsGfHmC_3/pub?gid=0&single=true&output=csv";
+        const TOTAL_CARTES = 50;
+
+        function getInfo(id) {
+            if (id <= 30) return { rarity: "Commune", rate: "70%", class: "normal" };
+            if (id <= 40) return { rarity: "Rare", rate: "20%", class: "rarity-rare" };
+            if (id <= 46) return { rarity: "Très Rare", rate: "8%", class: "rarity-vrare" };
+            return { rarity: "ULTRA RARE", rate: "2%", class: "rarity-ultra" };
+        }
+
+        function chargerAlbum() {
+            const user = document.getElementById('pseudo').value.toLowerCase().trim();
+            Papa.parse(CSV_URL, {
+                download: true, header: true,
+                complete: function(results) {
+                    const data = results.data;
+                    const inv = {};
+                    let uniques = 0;
+
+                    data.forEach(row => {
+                        if(row.Pseudo && row.Pseudo.toLowerCase() === user) {
+                            inv[row.ID_Carte] = (inv[row.ID_Carte] || 0) + 1;
+                        }
+                    });
+
+                    const grid = document.getElementById('album');
+                    grid.innerHTML = "";
+                    for(let i=1; i<=TOTAL_CARTES; i++) {
+                        const count = inv[i] || 0;
+                        const info = getInfo(i);
+                        const div = document.createElement('div');
+                        div.className = `card-container ${count > 0 ? 'owned' : ''} ${info.class}`;
+                        div.onclick = () => zoom(i, info, count);
+                        
+                        // Utilisation de .webp suggérée pour la rapidité
+                        div.innerHTML = `
+                            <img src="img/${i}.png" class="card-img" loading="lazy">
+                            <div class="badge">x${count}</div>
+                        `;
+                        grid.appendChild(div);
+                        if(count > 0) uniques++;
+                    }
+                    document.getElementById('stats').innerText = `COLLECTION : ${uniques} / ${TOTAL_CARTES}`;
+                }
+            });
+        }
+
+        function zoom(id, info, count) {
+            document.getElementById('modal-img').src = `img/${id}.png`;
+            document.getElementById('modal-info').innerHTML = `
+                <div style="text-align:center">
+                    <h2 style="color:#00ffcc">CARTE #${id}</h2>
+                    <p><b>Rareté :</b> ${info.rarity}</p>
+                    <p><b>Drop :</b> ${info.rate}</p>
+                    <p><b>Possédée :</b> ${count} fois</p>
+                </div>
+            `;
+            document.getElementById('modal').style.display = 'flex';
+        }
+    </script>
+</body>
+</html>
