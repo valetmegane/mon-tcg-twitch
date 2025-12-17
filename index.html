@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>Master Set Twitch ME02</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <style>
+        :root {
+            /* Couleurs des Auras Éclatantes */
+            --blue-neon: #00d2ff;
+            --purple-neon: #bc00ff;
+            --gold-neon: #ffcb05;
+        }
+
+        body { 
+            background: #000000; 
+            color: white; 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            margin: 0; 
+            padding: 20px; 
+            -webkit-text-size-adjust: 100%; /* Fix bug iOS */
+        }
+
+        .header { text-align: center; margin-bottom: 30px; }
+        .logo { max-width: 140px; margin-bottom: 15px; }
+        h1 { font-size: 1.5rem; color: #fff; margin: 10px 0; text-transform: uppercase; letter-spacing: 1px; }
+
+        /* Zone de recherche optimisée pour Mobile */
+        .search-area { margin-bottom: 30px; }
+        input { 
+            padding: 15px; 
+            border-radius: 10px; 
+            border: 2px solid #333; 
+            background: #1a1a1a; 
+            color: white; 
+            width: 90%; 
+            max-width: 350px; 
+            font-size: 16px; /* Indispensable pour éviter le zoom iOS */
+            outline: none;
+            box-sizing: border-box;
+        }
+        button { 
+            margin-top: 10px;
+            padding: 15px 30px; 
+            border-radius: 10px; 
+            background: #ffcb05; 
+            color: black; 
+            font-weight: bold; 
+            border: none; 
+            cursor: pointer; 
+            font-size: 16px;
+            text-transform: uppercase;
+        }
+        button:active { transform: scale(0.95); }
+
+        /* Grille */
+        .grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); 
+            gap: 15px; 
+            max-width: 1100px; 
+            margin: 0 auto; 
+        }
+
+        @media (min-width: 600px) { 
+            .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 25px; } 
+        }
+
+        /* Cartes et Auras Néon */
+        .card-container { position: relative; border-radius: 10px; transition: transform 0.2s; }
+        .card-img { 
+            width: 100%; 
+            border-radius: 10px; 
+            display: block;
+            filter: grayscale(100%) brightness(20%); 
+            transition: 0.4s;
+        }
+
+        .owned .card-img { filter: grayscale(0%) brightness(100%); }
+
+        /* Effets d'aura petants */
+        @keyframes pulse-neon {
+            0% { filter: drop-shadow(0 0 3px var(--neon-color)) brightness(1); }
+            50% { filter: drop-shadow(0 0 12px var(--neon-color)) brightness(1.2); }
+            100% { filter: drop-shadow(0 0 3px var(--neon-color)) brightness(1); }
+        }
+
+        .owned.rarity-rare { --neon-color: var(--blue-neon); animation: pulse-neon 2.5s infinite; }
+        .owned.rarity-vrare { --neon-color: var(--purple-neon); animation: pulse-neon 2s infinite; }
+        .owned.rarity-ultra { --neon-color: var(--gold-neon); animation: pulse-neon 1.5s infinite; }
+
+        .badge { 
+            position: absolute; top: -5px; right: -5px; 
+            background: #ff0000; color: white; 
+            border-radius: 50%; width: 26px; height: 26px; 
+            display: none; align-items: center; justify-content: center; 
+            font-size: 12px; font-weight: bold; border: 2px solid white; z-index: 5;
+        }
+        .owned .badge { display: flex; }
+
+        /* Modal Zoom */
+        #modal { 
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; flex-direction: column;
+        }
+        #modal img { width: 80%; max-width: 320px; border-radius: 15px; border: 2px solid white; }
+        #modal-info { margin-top: 20px; text-align: center; background: #222; padding: 15px; border-radius: 10px; width: 80%; max-width: 300px; }
+
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <img src="img/logo.png" alt="" class="logo" onerror="this.style.display='none'">
+        <h1>MASTER SET TWITCH ME02</h1>
+        <div class="search-area">
+            <input type="text" id="pseudo" placeholder="Entre ton pseudo...">
+            <br>
+            <button onclick="chargerAlbum()">VOIR MON ALBUM</button>
+        </div>
+        <div id="stats" style="color: #ffcb05; font-weight: bold; margin-bottom: 10px;"></div>
+    </div>
+
+    <div class="grid" id="album"></div>
+
+    <div id="modal" onclick="this.style.display='none'">
+        <img id="modal-img" src="">
+        <div id="modal-info"></div>
+    </div>
+
+    <script>
+        const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR47QWdhzcXoGqyJc0_OIPnLvPMmeGAofr2RpB-MfvT-7F3rG0ATQ4O5KUtI0u2GkDHV5tTsGfHmC_3/pub?gid=0&single=true&output=csv";
+        const TOTAL_CARTES = 50;
+
+        function getInfo(id) {
+            if (id <= 30) return { rarity: "Commune", rate: "70%", class: "normal" };
+            if (id <= 40) return { rarity: "Rare", rate: "20%", class: "rarity-rare" };
+            if (id <= 46) return { rarity: "Très Rare", rate: "8%", class: "rarity-vrare" };
+            return { rarity: "ULTRA RARE", rate: "2%", class: "rarity-ultra" };
+        }
+
+        function chargerAlbum() {
+            const user = document.getElementById('pseudo').value.toLowerCase().trim();
+            if(!user) return;
+
+            Papa.parse(CSV_URL, {
+                download: true, header: true,
+                complete: function(results) {
+                    const data = results.data;
+                    const inv = {};
+                    let uniques = 0;
+
+                    data.forEach(row => {
+                        if(row.Pseudo && row.Pseudo.toLowerCase() === user) {
+                            inv[row.ID_Carte] = (inv[row.ID_Carte] || 0) + 1;
+                        }
+                    });
+
+                    const grid = document.getElementById('album');
+                    grid.innerHTML = "";
+                    for(let i=1; i<=TOTAL_CARTES; i++) {
+                        const count = inv[i] || 0;
+                        const info = getInfo(i);
+                        const div = document.createElement('div');
+                        div.className = `card-container ${count > 0 ? 'owned' : ''} ${info.class}`;
+                        div.onclick = () => zoom(i, info, count);
+                        
+                        div.innerHTML = `
+                            <img src="img/${i}.png" class="card-img" loading="lazy">
+                            <div class="badge">x${count}</div>
+                        `;
+                        grid.appendChild(div);
+                        if(count > 0) uniques++;
+                    }
+                    document.getElementById('stats').innerText = `MA COLLECTION : ${uniques} / ${TOTAL_CARTES}`;
+                    
+                    // Scroll automatique vers la grille sur mobile
+                    window.scrollTo({ top: grid.offsetTop - 20, behavior: 'smooth' });
+                }
+            });
+        }
+
+        function zoom(id, info, count) {
+            document.getElementById('modal-img').src = `img/${id}.png`;
+            document.getElementById('modal-info').innerHTML = `
+                <h2 style="margin:0; color:#ffcb05">CARTE #${id}</h2>
+                <p style="margin:5px 0"><b>Rareté :</b> ${info.rarity}</p>
+                <p style="margin:5px 0"><b>Taux :</b> ${info.rate}</p>
+                <p style="margin:5px 0"><b>Tu l'as :</b> ${count} fois</p>
+            `;
+            document.getElementById('modal').style.display = 'flex';
+        }
+    </script>
+</body>
+</html>
